@@ -1,0 +1,258 @@
+---
+title: "Trend of influenza-like illness in Taiwan"
+author: "Chester Wang"
+date: "January 25, 2024"
+format: html
+---
+
+# 1. Introduction
+
+Since 2022, the number of patients with respiratory diseases began to rise after the gradual lifting of coronavirus controls in Taiwan. In this report, we track the proportion of population having influenza-like illness (ILI) in the past decade, and the difference in percentages among different age groups as well as different regions to understand the trend of ILI in Taiwan.
+
+# 2. R Packages
+
+The required packages used in this analysis are as follows:
+
+```{r echo=FALSE}
+options(warn=-1)
+```
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(readxl)
+library(sf)
+library(ggrepel)
+library(ggthemes)
+library(grDevices)
+```
+
+# 3. Dataset
+
+To understand the total number of patients having ILI in Taiwan, we obtain the clinical visit records of different cities and age groups from Center for Disease Control ([Ministry of Health and Welfare, 2024](https://data.cdc.gov.tw/en/dataset/hi-outpatient-emergency-visit-influenza-like-illness)). Data of city population is downloaded from Department of Household Registration ([Ministry of the Interior, 2024](https://www.ris.gov.tw/app/portal/346)). These datasets are translated and pre-processed for analysis of trend of influenza-like illness from 2014 to 2023 in Taiwan.
+
+```{r message=FALSE, warning=FALSE}
+influenza_like_ten_year <- 
+  read.csv("NHI_Influenza_like_illness_processed.csv")
+
+options(dplyr.summarise.inform = FALSE) 
+
+influenza_like_age_group <- influenza_like_ten_year %>%
+  group_by(Year, Age_group) %>%
+  mutate(Age_group = factor(Age_group, 
+                            levels = c("0-4","5-14","15-24","25-64",
+                                       "65+"))) %>%
+  summarize(Annual_total_cases = sum(Patient_count))
+```
+
+The clinical visit records of ILI obtained from Center for Disease Control categorize patients into five age groups. Therefore, population data provided by Department of Household Registration needs to be pre-processed and merged with the clinical visit records for further analysis.
+
+```{r message=FALSE, warning=FALSE}
+population_year <- read.csv("population_year_processed.csv")
+
+influenza_like_percentage <- influenza_like_age_group %>%
+  inner_join(population_year, by = c("Year" = "Years", 
+                                     "Age_group" = "Age_level")) %>%
+  mutate(Age_group = factor(Age_group, 
+                            levels = c("0-4","5-14","15-24","25-64",
+                                       "65+"))) %>%
+  mutate(Percentage = Annual_total_cases/Population)
+```
+
+# 4. Analysis
+
+## 4.1 Percentage of ILI cases by age group
+
+In the first part of analysis, we compare the percentage of ILI cases among the five age groups.
+
+### 4.1.1 Distribution of percentages by age group
+
+```{r message=FALSE, warning=FALSE}
+mean_percentage <- influenza_like_percentage %>%
+  group_by(Age_group) %>% summarize(Mean = mean(Percentage))
+
+ggplot(influenza_like_percentage, 
+       aes(x = Percentage, fill = Age_group)) +
+  scale_x_continuous(labels = scales::percent) +
+  theme_minimal() +
+  geom_density(alpha = 0.5) +
+  geom_rug(aes(color = Age_group)) +
+  geom_vline(data = mean_percentage, 
+             aes(xintercept = Mean, color = Age_group),
+             linetype = 2) +
+  theme(plot.title = element_text(hjust = -2)) +
+  guides(fill = guide_legend(title = "Age group"),
+         color = guide_legend(title = "Age group")) +
+  ylab("Density") +
+  ggtitle("Distribution of percentages by age group (2014-2023)") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Density plot reveals that populations aged 0-4 years and 5-14 years have wider distributions with left-skewed density curves. The 0-4 years age group has the largest mean value (represented as the dashed line). Group of 5-14 years has the second largest mean followed by the 65+ years population.
+
+```{r message=FALSE, warning=FALSE}
+ggplot(influenza_like_percentage, 
+       aes(x = Age_group, y = Percentage)) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent) +
+  theme(axis.title.x=element_blank()) +
+  geom_jitter(width = 0.1, aes(color= Age_group)) +
+  geom_boxplot(alpha = 0.5, aes(fill = Age_group)) +
+  theme(legend.position = "none") +
+  ggtitle("Boxplot of percentages by age group (2014-2023)") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+As shown in the boxplot, the median values of age groups follow the similar pattern as the mean values shown in the density plot. It is more clearly observed in the boxplot that all age groups demonstrate left-skewed distributions. In addition, an outlier is observed in the 0-4 years age group.
+
+### 4.1.2 Trend of percentage change
+
+```{r message=FALSE, warning=FALSE}
+ggplot(influenza_like_percentage, aes(x = Year, y = Percentage)) +
+  scale_x_continuous(
+    labels = as.character(influenza_like_percentage$Year), 
+    breaks = influenza_like_percentage$Year) +
+  scale_y_continuous(labels = scales::percent) + 
+  theme_minimal() +
+  geom_point(aes(color = Age_group)) + 
+  geom_smooth(aes(color = Age_group), se = F) +
+  geom_hline(data = mean_percentage, 
+             aes(yintercept = Mean, color = Age_group),
+             linetype = 2) +
+  guides(color = guide_legend(title = "Age group")) +
+  ggtitle("Trend of percentage change (2014-2023)") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+While variations are significant during the years of COVID-19 pandemic, the trend chart reveals that 0-4 years has the highest percentages of ILI cases over the past decade among the five age groups, especially that the percentages are as much as 50% or higher before the pandemic. Age group of 5-14 years has the second highest percentages in all years of 2014-2023. The implementation of prevention and control measures of COVID-19 since 2020 led to a significant decline of trend in all age groups, which reached the lowest point in 2021. The number of clinical visits with ILI began to rise after the gradual lifting of coronavirus controls since 2022. Percentages have returned to the pre-pandemic level at the end of 2023, except for the age group of 65+ years.
+
+## 4.2 Percentage of ILI cases by region
+
+In the second part of analysis, we compare the percentage of ILI cases between different cities in Taiwan.
+
+### 4.2.1 Distribution of percentages by city
+
+```{r message=FALSE, warning=FALSE}
+influenza_like_city <- influenza_like_ten_year %>% 
+  mutate(Age_group = factor(Age_group, 
+                            levels=c("0-4","5-14","15-24","25-64",
+                                     "65+"))) %>%
+  filter(Year == 2023) %>%
+  group_by(Year, City, Age_group) %>%
+  summarize(Total_cases = sum(Patient_count))
+```
+
+```{r message=FALSE, warning=FALSE}
+city_population_excel <- read_excel("city_population_2023.xls",
+                                    range = "A2:F24")
+city_population_excel <- 
+  city_population_excel[order(city_population_excel$City),]
+
+influenza_like_city_0_to_4 <-
+  influenza_like_city[influenza_like_city$Age_group == "0-4",] %>%
+  cbind("0-4" = city_population_excel$`0-4`) %>% 
+  mutate(Percentage = Total_cases/`0-4`)
+influenza_like_city_5_to_14 <-
+  influenza_like_city[influenza_like_city$Age_group == "5-14",] %>%
+  cbind("5-14" = city_population_excel$`5-14`) %>% 
+  mutate(Percentage = Total_cases/`5-14`)
+influenza_like_city_15_to_24 <-
+  influenza_like_city[influenza_like_city$Age_group == "15-24",] %>%
+  cbind("15-24" = city_population_excel$`15-24`) %>% 
+  mutate(Percentage = Total_cases/`15-24`)
+influenza_like_city_25_to_64 <-
+  influenza_like_city[influenza_like_city$Age_group == "25-64",] %>%
+  cbind("25-64" = city_population_excel$`25-64`) %>% 
+  mutate(Percentage = Total_cases/`25-64`)
+influenza_like_city_65_and_over <-
+  influenza_like_city[influenza_like_city$Age_group == "65+",] %>%
+  cbind("65+" = city_population_excel$`65+`) %>% 
+  mutate(Percentage = Total_cases/`65+`)
+
+influenza_like_city_percentage <- 
+  influenza_like_city_0_to_4 %>% 
+  rbind(influenza_like_city_5_to_14) %>%
+  rbind(influenza_like_city_15_to_24) %>%
+  rbind(influenza_like_city_25_to_64) %>%
+  rbind(influenza_like_city_65_and_over) %>%
+  ungroup() %>%
+  select(City, Age_group, Percentage)
+```
+
+```{r message=FALSE, warning=FALSE}
+ggplot(influenza_like_city_percentage, 
+       aes(x = Age_group, y = Percentage)) +
+  theme_minimal() + xlab(NULL) +
+  scale_y_continuous(labels = scales::percent) +
+  geom_violin() +
+  geom_jitter(width = 0.2, aes(color = City)) +
+  guides(fill = "none", 
+         color = guide_legend(title = NULL)) +
+  theme(legend.text = element_text(size = 6)) +
+  ggtitle("Violin plot of percentage by city (2023)") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+The violin plot indicates the differences of percentages by city in each age group. While the first part of analysis already revealed the larger differences observed in the children groups, the differences are greater when we examine them from a regional perspective, especially in the 0-4 years age group.
+
+### 4.2.2 Examine regional differences on map
+
+```{r message=FALSE, warning=FALSE}
+# load taiwan city boundary data
+
+sf_tw <-
+  st_read(dsn = "taiwan_city_boundary/", 
+          layer = "COUNTY_MOI_1090820", quiet = T) %>%
+  mutate(across(where(is.character), 
+                ~iconv(., from = "BIG5", to = "UTF8"))) %>%
+  rename_with(~str_to_lower(.), everything()) %>% 
+  mutate(across(where(is.double), 
+                ~if_else(is.na(.),as.double(0),.)))
+
+sf_tw <- sf_tw[order(sf_tw$countyeng),]
+
+# include overall percentage of ILI cases by city
+
+city_population_overall <- city_population_excel %>%
+  rowwise() %>%
+  mutate(Total = sum(`0-4`, `5-14`, `15-24`, `25-64`, `65+`)) %>%
+  select(City, Total)
+
+influenza_like_city_overall <- influenza_like_city %>%
+  group_by(City) %>%
+  summarize(Total_cases = sum(Total_cases)) %>%
+  mutate(Percentage = Total_cases/city_population_overall$Total)
+
+sf_tw_percentage <- sf_tw %>%
+  select(countyeng, geometry) %>%
+  mutate(`0-4` = influenza_like_city_0_to_4$Percentage) %>%
+  mutate(`5-14` = influenza_like_city_5_to_14$Percentage) %>%
+  mutate(`15-24` = influenza_like_city_15_to_24$Percentage) %>%
+  mutate(`25-64` = influenza_like_city_25_to_64$Percentage) %>%
+  mutate(`65+` = influenza_like_city_65_and_over$Percentage) %>%
+  mutate(Overall = influenza_like_city_overall$Percentage)
+
+# create heatmap
+
+ggplot(sf_tw_percentage, aes(fill = Overall)) + 
+  geom_sf(color = NA) +
+  scale_fill_gradient(low = "mistyrose", high = "indianred",
+                      labels = scales::label_percent()) +
+  coord_sf(xlim = c(118, 122.9), ylim = c(21.8, 25.4), expand = F) +
+  guides(fill=guide_legend(title = NULL)) +
+  geom_sf_text(aes(label = countyeng), col = 'grey45', 
+               size = 2.5, fontface = "bold") +
+  labs(x = NULL, y = NULL) +
+  theme_minimal() +
+  ggtitle("Percentage of ILI cases by city (2023)") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# 5. Conclusion
+
+Comparison of percentage of ILI cases between age groups reveal that the children groups have higher risks to get influenza-like illnesses, especially the age group of 0-4 years. The plunge in percentage values observed in each age group in 2020 can be presumed to be caused by the implementation of measures to prevent spread of COVID-19, as the trend of percentages rebounded in 2022 after the gradual lifting of coronavirus restrictions. It is worth noting that the variation is the largest in 0-4 year age group and lead to the outlier observed in 2021, which means the effect of preventive measures for respiratory diseases is the most significant in this group. Special attention would be needed for 0-4 years after easing of control measures and returning to the pre-pandemic lives. The difference of percentages of ILI cases among different cities observed in this analysis can be included in the consideration for metric setting in monitoring ILI development and for planning of medical resource allocation.
+
+# 6. Reference
+
+Ministry of Health and Welfare, Taiwan (R.O.C.), 2024. Health Insurance Outpatient and Emergency Visits - Influenza. \[Online\]<br>Available at: <https://data.cdc.gov.tw/en/dataset/hi-outpatient-emergency-visit-influenza-like-illness>
+
+Ministry of the Interior, Taiwan (R.O.C.), 2024. Population by Sex and 5 Year Age Group for Counties and Cities. \[Online\]<br>Available at: <https://www.ris.gov.tw/app/portal/346>
